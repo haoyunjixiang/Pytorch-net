@@ -34,7 +34,7 @@ data_transform = {
 }
 
 '''获取图片地址'''
-data_root = os.path.abspath(os.path.join(os.getcwd(), "../"))
+data_root = os.path.abspath(os.path.join(os.getcwd(), "../../"))
 image_root = data_root + "/DataSet/flower_data/"
 
 '''获取数据'''

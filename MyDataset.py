@@ -15,7 +15,7 @@ class MyDatasets(Dataset):
 
     def __len__(self):
         return len(self.imagelist)
-
+datapath = 'E:\Learn\data\\testdata'
 def testMydata():
     train_loader = DataLoader(MyDatasets(),batch_size=4,shuffle=True,drop_last=True)
     for epoch in range(10):
@@ -37,3 +37,37 @@ def torchvisionDataset():
     idata = iter(train_loader)
     print(next(idata))
 torchvisionDataset()
+
+def getMinistData():
+    train_data = torchvision.datasets.MNIST(
+        root=datapath,
+        train=True, transform=transforms.ToTensor(),
+        download=False
+    )
+
+    train_loader = DataLoader(
+        dataset=train_data,
+        batch_size=64,  # 每次读取一个batch中样本的数量
+        shuffle=True,  # 重新使用loader时打乱数据
+        num_workers=0  # 工作线程数
+    )
+
+    test_data = torchvision.datasets.MNIST(
+        root=datapath,
+        train=False, transform=transforms.ToTensor(),
+        download=False
+    )
+
+    test_loader = DataLoader(
+        dataset=test_data,
+        batch_size=64,
+        shuffle=True,
+        num_workers=0
+    )
+    # for batch in train_loader:
+    #     x, y = batch
+    #     print(x.shape)
+    #     print(y.shape)
+    #     break
+    return train_loader,test_loader
+getMinistData()
