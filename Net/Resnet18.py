@@ -32,11 +32,11 @@ class ResBlock(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, ResBlock, num_classes=10):
+    def __init__(self, ResBlock, in_channel=3, num_classes=10):
         super(ResNet, self).__init__()
         self.inchannel = 64
         self.conv1 = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.Conv2d(in_channel, 64, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(64),
             nn.ReLU()
         )
@@ -65,8 +65,9 @@ class ResNet(nn.Module):
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
         out = self.fc(out)
+        out = F.log_softmax(out,dim=1)
         return out
-def ResNet18():
-    return ResNet(ResBlock)
-net = ResNet18()
-print(net)
+def ResNet18(in_channel = 3):
+    return ResNet(ResBlock,in_channel)
+# net = ResNet18()
+# print(net)
