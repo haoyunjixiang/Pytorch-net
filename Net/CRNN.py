@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import OCRDataset.baiduDataset as baiduDataset
+from torch.utils.data import DataLoader
 
 class BidirectionalLSTM(nn.Module):
     # Inputs hidden units Out
@@ -89,23 +91,83 @@ def get_crnn(config):
     model = CRNN(config.MODEL.IMAGE_SIZE.H, 1, config.MODEL.NUM_CLASSES + 1, config.MODEL.NUM_HIDDEN)
     model.apply(weights_init)
     return model
-def test_crnn():
-    bs = 1
-    model = CRNN(32, 3, 1000 + 1, 10)
-    input = torch.rand(bs,3,32,360)
-    text_len = torch.randint(1,10,size=(bs,))
-    text = torch.randint(1,100,size=(sum(text_len),))
-    preds = model(input)
-    print(preds.shape,text,text_len)
 
-    bs = input.size(0)
+def get_label_dict():
+    label_dict = {}
+    labeltxt_dir = '/home/yang/Desktop/data/baidu/train.txt'
+    dict_txt = "/home/yang/Desktop/data/baidu/ppocr_keys_v1.txt"
+
+    ch_dict = {}
+    dict_file = open(dict_txt)
+    index = 0
+    for ch in dict_file:
+        ch_dict[ch.strip()] = index
+        index = index + 1
+
+    labels = [line.strip().split('\t')[-1] for line in open(labeltxt_dir)]
+    for index in range(len(labels)):
+        label = labels[index]
+        label_num = []
+        for ch in label:
+            label_num.append(ch_dict[ch])
+        label_dict[index] = label_num
+    return label_dict
+
+def get_target(labels_dict,idx):
+    text = []
+    text_len = []
+    ids = idx.tolist()
+    for id in ids:
+        cur_text = labels_dict[id]
+        text.extend(cur_text)
+        text_len.append(len(cur_text))
+    return torch.IntTensor(text),torch.IntTensor(text_len)
+
+
+def test_crnn():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    bs = 1
+    model = CRNN(32, 3, 3154 + 1, 10).to(device)
     criterion = nn.CTCLoss()
-    preds_size = torch.IntTensor([preds.size(0)] * bs)
-    loss = criterion(preds,text,preds_size,text_len)
     optimer = torch.optim.Adam(model.parameters())
 
-    optimer.zero_grad()
-    loss.backward()
-    optimer.step()
-    print(loss.item())
+    train_dataset = baiduDataset.baiduData()
+    train_loader = DataLoader(train_dataset, batch_size=2)
+    label_dict = get_label_dict()
+    for id, (img, idx) in enumerate(train_loader):
+        input = img.to(device)
+        text,text_len = get_target(label_dict, idx)
+        preds = model(input)
+        bs = input.size(0)
+        preds_size = torch.IntTensor([preds.size(0)] * bs)
+        loss = criterion(preds, text, preds_size, text_len)
+
+        optimer.zero_grad()
+        loss.backward()
+        optimer.step()
+        if id %200 == 0:
+            print(loss.item())
+
+def rand_test_crnn():
+    bs = 2
+    model = CRNN(32, 3, 3154 + 1, 10)
+    criterion = nn.CTCLoss()
+    optimer = torch.optim.Adam(model.parameters())
+
+    for i in range(5):
+        input = torch.rand(bs,3,32,360)
+        text_len = torch.randint(1,10,size=(bs,))
+        text = torch.randint(1,100,size=(sum(text_len),))
+        preds = model(input)
+        print(preds.shape,text,text_len)
+
+        bs = input.size(0)
+        preds_size = torch.IntTensor([preds.size(0)] * bs)
+        loss = criterion(preds,text,preds_size,text_len)
+
+        optimer.zero_grad()
+        loss.backward()
+        optimer.step()
+        print(loss.item())
 test_crnn()
+# rand_test_crnn()
