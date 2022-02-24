@@ -24,6 +24,7 @@ class baiduData(Dataset):
 
     def __getitem__(self, item):
         imgpath = self.imglist[item]
+        # print(imgpath)
         img = cv.imread(imgpath)
         img = cv.resize(img,(320,32))
         img = self.transform(img)
@@ -39,8 +40,9 @@ class baiduData(Dataset):
     def getDictLabel(self,dict_txt,label_txt):
         dict_label = {}
         rec = {}
+        dict_label["blank"] = 0
         for line in open(label_txt):
-            line = line.strip()
+            line = line.strip().replace("\t","")
             for ch in line:
                 dict_label[ch] = 0
         savefile = open(dict_txt,'w')

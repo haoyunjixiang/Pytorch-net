@@ -94,24 +94,24 @@ def get_crnn(config):
 
 def get_label_dict():
     label_dict = {}
-    labeltxt_dir = '/home/yang/Desktop/data/baidu/train.txt'
-    dict_txt = "/home/yang/Desktop/data/baidu/ppocr_keys_v1.txt"
-
     ch_dict = {}
     dict_file = open(dict_txt)
     index = 0
+    alphabets = []
     for ch in dict_file:
         ch_dict[ch.strip()] = index
         index = index + 1
+        alphabets.append(ch.strip())
 
-    labels = [line.strip().split('\t')[-1] for line in open(labeltxt_dir)]
+    labels = [line.strip().split('\t')[-1] for line in open(labeldir)]
     for index in range(len(labels)):
         label = labels[index]
         label_num = []
         for ch in label:
             label_num.append(ch_dict[ch])
         label_dict[index] = label_num
-    return label_dict
+
+    return label_dict,alphabets
 
 def get_target(labels_dict,idx):
     text = []
@@ -123,34 +123,105 @@ def get_target(labels_dict,idx):
         text_len.append(len(cur_text))
     return torch.IntTensor(text),torch.IntTensor(text_len)
 
+datadir = "/home/yang/Desktop/data/synth/number/images/"
+labeldir = "/home/yang/Desktop/data/synth/number/label.txt"
+dict_txt = "/home/yang/Desktop/data/baidu/ppocr_keys_v1.txt"
 
 def test_crnn():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    bs = 1
-    model = CRNN(32, 3, 3154 + 1, 10).to(device)
+    bs = 64
+    epochs = 10
+    model = CRNN(32, 3, 14 + 1, 256).to(device)
     criterion = nn.CTCLoss()
     optimer = torch.optim.Adam(model.parameters())
 
-    train_dataset = baiduDataset.baiduData()
-    train_loader = DataLoader(train_dataset, batch_size=2)
-    label_dict = get_label_dict()
-    for id, (img, idx) in enumerate(train_loader):
-        input = img.to(device)
-        text,text_len = get_target(label_dict, idx)
-        preds = model(input)
-        bs = input.size(0)
-        preds_size = torch.IntTensor([preds.size(0)] * bs)
-        loss = criterion(preds, text, preds_size, text_len)
+    train_dataset = baiduDataset.baiduData(datadir,labeldir)
+    train_loader = DataLoader(train_dataset, batch_size=bs)
+    label_dict,alphabets = get_label_dict()
+    # t = decode(torch.IntTensor([1, 2, 3, 4]), torch.IntTensor([4]), alphabets)
+    for epoch in range(epochs):
+        for id, (img, idx) in enumerate(train_loader):
+            input = img.to(device)
+            text,text_len = get_target(label_dict, idx)
+            preds = model(input)
+            bs = input.size(0)
+            preds_size = torch.IntTensor([preds.size(0)] * bs)
+            loss = criterion(preds, text, preds_size, text_len)
 
-        optimer.zero_grad()
-        loss.backward()
-        optimer.step()
-        if id %200 == 0:
-            print(loss.item())
+            optimer.zero_grad()
+            loss.backward()
+            optimer.step()
+            if id % 200 == 0:
+                print("epoch is {},iters is {}/{} loss is {}".format(epoch,id,len(train_loader),loss.item()))
+        testAcc(model,label_dict,alphabets,device)
+
+def decode(t, length,alphabet, raw=False):
+    # decode([1,2,3,4],[4],alphabet)
+    """Decode encoded texts back into strs.
+
+    Args:
+        torch.IntTensor [length_0 + length_1 + ... length_{n - 1}]: encoded texts.
+        torch.IntTensor [n]: length of each text.
+
+    Raises:
+        AssertionError: when the texts and its length does not match.
+
+    Returns:
+        text (str or list of str): texts to convert.
+    """
+
+    if length.numel() == 1:
+        length = length[0]
+        assert t.numel() == length, "text with length: {} does not match declared length: {}".format(t.numel(), length)
+        if raw:
+            return ''.join([alphabet[i] for i in t])
+        else:
+            char_list = []
+            for i in range(length):
+                if t[i] != 0 and (not (i > 0 and t[i - 1] == t[i])):
+                    char_list.append(alphabet[t[i]])
+            return ''.join(char_list)
+    else:
+        # batch mode
+        assert t.numel() == length.sum(), "texts with length: {} does not match declared length: {}".format(t.numel(), length.sum())
+        texts = []
+        index = 0
+        for i in range(length.numel()):
+            l = length[i]
+            texts.append(
+                decode(
+                    t[index:index + l], torch.IntTensor([l]), alphabet,raw=raw))
+            index += l
+        return texts
+
+def testAcc(net,label_dict,alphabets,device):
+    correts = 0
+    train_dataset = baiduDataset.baiduData(datadir,labeldir)
+    train_loader = DataLoader(train_dataset, batch_size=1)
+    with torch.no_grad():
+        for id, (img, idx) in enumerate(train_loader):
+            input = img.to(device)
+            text, text_len = get_target(label_dict, idx)
+            labels = decode(text,text_len,alphabets,raw=True)
+            preds = net(input)
+            batch_size = input.size(0)
+            preds_size = torch.IntTensor([preds.size(0)] * batch_size)
+            _, preds = preds.max(2)
+            preds = preds.transpose(1, 0).contiguous().view(-1)
+            print(preds.data)
+            sim_preds = decode(preds.data, preds_size.data,alphabets, raw=False)
+            for pred, target in zip(sim_preds, labels):
+                print(pred, "   " ,target)
+                if pred == target:
+                    correts += 1
+        print("Acc is {}/{}".format(correts,len(train_loader.dataset)))
+    save_model()
+def save_model():
+    print("savemodel")
 
 def rand_test_crnn():
     bs = 2
-    model = CRNN(32, 3, 3154 + 1, 10)
+    model = CRNN(32, 3, 3153 + 1, 10)
     criterion = nn.CTCLoss()
     optimer = torch.optim.Adam(model.parameters())
 
@@ -169,5 +240,6 @@ def rand_test_crnn():
         loss.backward()
         optimer.step()
         print(loss.item())
+
 test_crnn()
 # rand_test_crnn()
