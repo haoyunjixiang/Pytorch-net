@@ -26,7 +26,7 @@ class baiduData(Dataset):
         imgpath = self.imglist[item]
         # print(imgpath)
         img = cv.imread(imgpath)
-        img = cv.resize(img,(320,32))
+        img = cv.resize(img,(160,32))
         img = self.transform(img)
         label = self.labels[item]
         encode_label = []
@@ -40,15 +40,19 @@ class baiduData(Dataset):
     def getDictLabel(self,dict_txt,label_txt):
         dict_label = {}
         rec = {}
-        dict_label["blank"] = 0
+        # dict_label["blank"] = 0
         for line in open(label_txt):
-            line = line.strip().replace("\t","")
+            line = line.strip().split("\t")[1]
             for ch in line:
                 dict_label[ch] = 0
         savefile = open(dict_txt,'w')
-        for id,ch in enumerate(dict_label.keys()):
-            rec[ch] = id
-            savefile.write(ch+"\n")
+        keys = sorted(list(dict_label.keys()))
+        for index in range(len(keys)):
+            rec[keys[index]] = index + 1
+            savefile.write(keys[index] + "\n")
+        # for id,ch in enumerate(dict_label.keys()):
+        #     rec[ch] = id
+        #     savefile.write(ch+"\n")
         return rec
 
 
