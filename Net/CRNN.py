@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import OCRDataset.baiduDataset as baiduDataset
+from OCRDataset import baiduDataset
 from torch.utils.data import DataLoader
 
 class BidirectionalLSTM(nn.Module):
@@ -87,14 +87,15 @@ def weights_init(m):
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
 
-def get_crnn(config):
-    model = CRNN(config.MODEL.IMAGE_SIZE.H, 1, config.MODEL.NUM_CLASSES + 1, config.MODEL.NUM_HIDDEN)
+def get_crnn():
+    model = CRNN(32, 1, 9 + 1, 256)
     model.apply(weights_init)
     return model
 
 def get_label_dict():
     # key is index  label is img's label
     index_label = {}
+    test_index_label = {}
     ch_dict = {}
     dict_file = open(dict_txt)
     index = 1
@@ -103,6 +104,7 @@ def get_label_dict():
         ch_dict[ch.strip()] = index
         index = index + 1
         alphabets.append(ch.strip())
+
     labels = [line.strip().split('\t')[-1] for line in open(labeldir)]
     for index in range(len(labels)):
         label = labels[index]
@@ -110,7 +112,15 @@ def get_label_dict():
         for ch in label:
             label_num.append(ch_dict[ch])
         index_label[index] = label_num
-    return index_label,alphabets
+
+    test_labels = [line.strip().split('\t')[-1] for line in open(test_labeldir)]
+    for index in range(len(test_labels)):
+        label = test_labels[index]
+        label_num = []
+        for ch in label:
+            label_num.append(ch_dict[ch])
+        test_index_label[index] = label_num
+    return index_label,test_index_label,alphabets
 
 def get_target(labels_dict,idx):
     text = []
@@ -124,35 +134,75 @@ def get_target(labels_dict,idx):
 
 datadir = "/home/yang/Desktop/data/synth/number/images/"
 labeldir = "/home/yang/Desktop/data/synth/number/label.txt"
+test_labeldir = "/home/yang/Desktop/data/synth/number/test_label.txt"
 dict_txt = "/home/yang/Desktop/data/baidu/ppocr_keys_v1.txt"
 
 def test_crnn():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    bs = 64
-    epochs = 200
-    model = CRNN(32, 3, 9 + 1, 256).to(device)
+    bs = 32
+    epochs = 35
+    # model = CRNN(32, 1, 9 + 1, 256).to(device)
+    model = get_crnn()
+    model = model.to(device)
     criterion = nn.CTCLoss()
     optimer = torch.optim.Adam(model.parameters(),lr=0.0001)
 
     train_dataset = baiduDataset.baiduData(datadir,labeldir)
     train_loader = DataLoader(train_dataset, batch_size=bs)
-    label_dict,alphabets = get_label_dict()
-    # t = decode(torch.IntTensor([1, 2, 3, 4]), torch.IntTensor([4]), alphabets)
-    for epoch in range(epochs):
-        for id, (img, idx) in enumerate(train_loader):
-            input = img.to(device)
-            text,text_len = get_target(label_dict, idx)
-            preds = model(input)
-            bs = input.size(0)
-            preds_size = torch.IntTensor([preds.size(0)] * bs)
-            loss = criterion(preds, text, preds_size, text_len)
 
-            optimer.zero_grad()
-            loss.backward()
-            optimer.step()
-            if id % 4 == 0:
-                print("epoch is {},iters is {}/{} loss is {}".format(epoch,id,len(train_loader),loss.item()))
-        testAcc(model,label_dict,alphabets,device)
+    test_dataset = baiduDataset.baiduData(datadir, test_labeldir)
+    test_loader = DataLoader(test_dataset, batch_size=33)
+
+    label_dict,test_label_dict,alphabets = get_label_dict()
+
+    for epoch in range(epochs):
+        trainModel(train_loader,device,label_dict,model,criterion,optimer,epoch)
+        testAcc(test_loader,model,test_label_dict,alphabets,device)
+
+def trainModel(train_loader,device,label_dict,model,criterion,optimer,epoch):
+    model.train()
+
+    for id, (img, idx) in enumerate(train_loader):
+        input = img.to(device)
+        text, text_len = get_target(label_dict, idx)
+        # print(id,img.shape,img[0])
+        preds = model(input)
+        bs = input.size(0)
+        preds_size = torch.IntTensor([preds.size(0)] * bs)
+        loss = criterion(preds, text, preds_size, text_len)
+
+        optimer.zero_grad()
+        loss.backward()
+        optimer.step()
+
+        if id % 4 == 0:
+            print("epoch is {},iters is {}/{} loss is {}".format(epoch, id, len(train_loader), loss.item()))
+
+
+def testAcc(test_loader,model, label_dict, alphabets, device):
+    correts = 0
+    model.eval()
+    with torch.no_grad():
+        for id, (img, idx) in enumerate(test_loader):
+            input = img.to(device)
+            text, text_len = get_target(label_dict, idx)
+            labels = decode(text,text_len,alphabets,raw=True)
+            preds = model(input)
+            batch_size = input.size(0)
+            preds_size = torch.IntTensor([preds.size(0)] * batch_size)
+            _, preds = preds.max(2)
+            preds = preds.transpose(1, 0).contiguous().view(-1)
+            sim_preds = decode(preds.data, preds_size.data,alphabets, raw=False)
+            for pred, target in zip(sim_preds, labels):
+                if pred == target:
+                    correts += 1
+                # else:
+                #     print(pred ,target)
+    raw_preds = decode(preds.data, preds_size.data, alphabets,raw=True)[:5]
+    for raw_pred, pred, gt in zip(raw_preds, sim_preds, labels):
+        print('%-20s => %-20s, gt: %-20s' % (raw_pred, pred, gt))
+    print("Acc is {}/{}".format(correts,len(test_loader.dataset)))
+    save_model()
 
 def decode(t, length,alphabet, raw=False):
     # decode([1,2,3,4],[4],alphabet)
@@ -192,33 +242,6 @@ def decode(t, length,alphabet, raw=False):
                     t[index:index + l], torch.IntTensor([l]), alphabet,raw=raw))
             index += l
         return texts
-
-def testAcc(net,label_dict,alphabets,device):
-    correts = 0
-    train_dataset = baiduDataset.baiduData(datadir,labeldir)
-    train_loader = DataLoader(train_dataset, batch_size=32)
-    with torch.no_grad():
-        for id, (img, idx) in enumerate(train_loader):
-            input = img.to(device)
-            text, text_len = get_target(label_dict, idx)
-            labels = decode(text,text_len,alphabets,raw=True)
-            preds = net(input)
-            batch_size = input.size(0)
-            preds_size = torch.IntTensor([preds.size(0)] * batch_size)
-            _, preds = preds.max(2)
-            preds = preds.transpose(1, 0).contiguous().view(-1)
-            sim_preds = decode(preds.data, preds_size.data,alphabets, raw=False)
-            for pred, target in zip(sim_preds, labels):
-                # print(pred, "111111" ,target)
-                if pred == target:
-                    correts += 1
-            if id == 5:
-                break
-        raw_preds = decode(preds.data, preds_size.data, alphabets,raw=True)[:10]
-        for raw_pred, pred, gt in zip(raw_preds, sim_preds, labels):
-            print('%-20s => %-20s, gt: %-20s' % (raw_pred, pred, gt))
-        print("Acc is {}/{}".format(correts,len(train_loader.dataset)))
-    save_model()
 
 def save_model():
     print("savemodel")

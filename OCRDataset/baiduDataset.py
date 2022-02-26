@@ -13,25 +13,27 @@ class baiduData(Dataset):
                  dict_txt = "/home/yang/Desktop/data/baidu/ppocr_keys_v1.txt"):
         super(baiduData, self).__init__()
         self.dir = datadir
-        self.imglist = [datadir+path for path in os.listdir(datadir)]
+        self.imglist = [datadir+line.strip().split('\t')[0] for line in open(labeltxt_dir)]
         self.labels = [line.strip().split('\t')[-1] for line in open(labeltxt_dir)]
         self.txt_dict = {}
         self.txt_dict = self.getDictLabel(dict_txt,labeltxt_dir)
-        self.transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.229, 0.224, 0.225)),  # R,G,B每层的归一化用到的均值和方差,对于MINIST单通道不适用
-    ])
+        self.mean = np.array(0.588, dtype=np.float32)
+        self.std = np.array(0.193, dtype=np.float32)
+        self.inp_h = 32
+        self.inp_w = 160
 
     def __getitem__(self, item):
         imgpath = self.imglist[item]
-        # print(imgpath)
         img = cv.imread(imgpath)
-        img = cv.resize(img,(160,32))
-        img = self.transform(img)
-        label = self.labels[item]
-        encode_label = []
-        for i in range(len(label)):
-            encode_label.append(self.txt_dict[label[i]])
+
+        img = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+        img_h, img_w = img.shape
+        img = cv.resize(img, (0, 0), fx=self.inp_w / img_w, fy=self.inp_h / img_h, interpolation=cv.INTER_CUBIC)
+        img = np.reshape(img, (self.inp_h, self.inp_w, 1))
+        img = img.astype(np.float32)
+        img = (img / 255. - self.mean) / self.std
+        img = img.transpose([2, 0, 1])
+
         return img,item
 
     def __len__(self):
@@ -50,21 +52,4 @@ class baiduData(Dataset):
         for index in range(len(keys)):
             rec[keys[index]] = index + 1
             savefile.write(keys[index] + "\n")
-        # for id,ch in enumerate(dict_label.keys()):
-        #     rec[ch] = id
-        #     savefile.write(ch+"\n")
         return rec
-
-
-
-
-def getDataLoader():
-
-    train_dataset = baiduData()
-    train_loader = DataLoader(train_dataset,batch_size=2)
-
-# train_dataset = baiduData()
-# train_loader = DataLoader(train_dataset,batch_size=1)
-# for id,(img,label,length) in enumerate(train_loader):
-#     print(id,img,label)
-#     break
