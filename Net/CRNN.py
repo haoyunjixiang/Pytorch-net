@@ -1,3 +1,5 @@
+import cv2 as cv
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -92,6 +94,28 @@ def get_crnn():
     model.apply(weights_init)
     return model
 
+def rand_test_crnn():
+    bs = 2
+    model = CRNN(32, 3, 3153 + 1, 10)
+    criterion = nn.CTCLoss()
+    optimer = torch.optim.Adam(model.parameters())
+
+    for i in range(5):
+        input = torch.rand(bs,3,32,360)
+        text_len = torch.randint(1,10,size=(bs,))
+        text = torch.randint(1,100,size=(sum(text_len),))
+        preds = model(input)
+        print(preds.shape,text,text_len)
+
+        bs = input.size(0)
+        preds_size = torch.IntTensor([preds.size(0)] * bs)
+        loss = criterion(preds,text,preds_size,text_len)
+
+        optimer.zero_grad()
+        loss.backward()
+        optimer.step()
+        print(loss.item())
+
 def get_label_dict():
     # key is index  label is img's label
     index_label = {}
@@ -140,7 +164,7 @@ dict_txt = "/home/yang/Desktop/data/baidu/ppocr_keys_v1.txt"
 def test_crnn():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     bs = 32
-    epochs = 35
+    epochs = 30
     # model = CRNN(32, 1, 9 + 1, 256).to(device)
     model = get_crnn()
     model = model.to(device)
@@ -202,7 +226,7 @@ def testAcc(test_loader,model, label_dict, alphabets, device):
     for raw_pred, pred, gt in zip(raw_preds, sim_preds, labels):
         print('%-20s => %-20s, gt: %-20s' % (raw_pred, pred, gt))
     print("Acc is {}/{}".format(correts,len(test_loader.dataset)))
-    save_model()
+    save_model(model)
 
 def decode(t, length,alphabet, raw=False):
     # decode([1,2,3,4],[4],alphabet)
@@ -243,30 +267,40 @@ def decode(t, length,alphabet, raw=False):
             index += l
         return texts
 
-def save_model():
+def save_model(model):
+    torch.save(model,"modelall.pkl")
+    # torch.save(model.state_dict(),"model.pkl")
     print("savemodel")
 
-def rand_test_crnn():
-    bs = 2
-    model = CRNN(32, 3, 3153 + 1, 10)
-    criterion = nn.CTCLoss()
-    optimer = torch.optim.Adam(model.parameters())
+def load_model_pre():
+    # model = get_crnn()
+    # model.load_state_dict(torch.load("model.pkl"))
 
-    for i in range(5):
-        input = torch.rand(bs,3,32,360)
-        text_len = torch.randint(1,10,size=(bs,))
-        text = torch.randint(1,100,size=(sum(text_len),))
-        preds = model(input)
-        print(preds.shape,text,text_len)
+    model = torch.load("modelall.pkl")
 
-        bs = input.size(0)
-        preds_size = torch.IntTensor([preds.size(0)] * bs)
-        loss = criterion(preds,text,preds_size,text_len)
+    imgpath = "/home/yang/Desktop/data/synth/number/images/000000001.jpg"
+    inp_w = 160
+    inp_h = 32
+    mean = 0.588
+    std = 0.193
+    img = cv.imread(imgpath)
+    img = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+    img_h, img_w = img.shape
+    img = cv.resize(img, (0, 0), fx=inp_w / img_w, fy=inp_h / img_h, interpolation=cv.INTER_CUBIC)
+    img = np.reshape(img, (inp_h, inp_w, 1))
+    img = img.astype(np.float32)
+    img = (img / 255. - mean) / std
+    img = img.transpose([2, 0, 1])
+    print(img.shape)
+    img = np.reshape(img, (-1,1,32,160))
+    preds = model(torch.from_numpy(img).to("cuda"))
+    _, preds = preds.max(2)
+    preds = preds.transpose(1, 0).contiguous().view(-1)
+    preds_size = torch.IntTensor([preds.size(0)])
+    _, _, alphabets = get_label_dict()
+    sim_preds = decode(preds.data, preds_size.data, alphabets, raw=False)
+    print(sim_preds)
 
-        optimer.zero_grad()
-        loss.backward()
-        optimer.step()
-        print(loss.item())
-
-test_crnn()
 # rand_test_crnn()
+# test_crnn()
+load_model_pre()
