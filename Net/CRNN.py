@@ -161,7 +161,12 @@ labeldir = "/home/yang/Desktop/data/synth/number/label.txt"
 test_labeldir = "/home/yang/Desktop/data/synth/number/test_label.txt"
 dict_txt = "/home/yang/Desktop/data/baidu/ppocr_keys_v1.txt"
 
+# datadir = "/home/yang/Desktop/data/baidu/train_images/"
+# labeldir = "/home/yang/Desktop/data/baidu/train.txt"
+# test_labeldir = "/home/yang/Desktop/data/baidu/val.txt"
+
 def test_crnn():
+    generate_keys_txt(dict_txt,labeldir)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     bs = 32
     epochs = 30
@@ -169,7 +174,7 @@ def test_crnn():
     model = get_crnn()
     model = model.to(device)
     criterion = nn.CTCLoss()
-    optimer = torch.optim.Adam(model.parameters(),lr=0.0001)
+    optimer = torch.optim.Adam(model.parameters(),lr=0.001)
 
     train_dataset = baiduDataset.baiduData(datadir,labeldir)
     train_loader = DataLoader(train_dataset, batch_size=bs)
@@ -182,6 +187,19 @@ def test_crnn():
     for epoch in range(epochs):
         trainModel(train_loader,device,label_dict,model,criterion,optimer,epoch)
         testAcc(test_loader,model,test_label_dict,alphabets,device)
+def generate_keys_txt(dict_txt,label_txt):
+    dict_label = {}
+    rec = {}
+    for line in open(label_txt):
+        lines = line.strip().split("\t")
+        label = "".join(lines[1:])
+        for ch in label:
+            dict_label[ch] = 0
+    savefile = open(dict_txt, 'w')
+    keys = sorted(list(dict_label.keys()))
+    for index in range(len(keys)):
+        rec[keys[index]] = index + 1
+        savefile.write(keys[index] + "\n")
 
 def trainModel(train_loader,device,label_dict,model,criterion,optimer,epoch):
     model.train()
@@ -201,7 +219,6 @@ def trainModel(train_loader,device,label_dict,model,criterion,optimer,epoch):
 
         if id % 4 == 0:
             print("epoch is {},iters is {}/{} loss is {}".format(epoch, id, len(train_loader), loss.item()))
-
 
 def testAcc(test_loader,model, label_dict, alphabets, device):
     correts = 0
@@ -302,5 +319,5 @@ def load_model_pre():
     print(sim_preds)
 
 # rand_test_crnn()
-# test_crnn()
-load_model_pre()
+test_crnn()
+# load_model_pre()

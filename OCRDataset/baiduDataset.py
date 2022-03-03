@@ -16,7 +16,7 @@ class baiduData(Dataset):
         self.imglist = [datadir+line.strip().split('\t')[0] for line in open(labeltxt_dir)]
         self.labels = [line.strip().split('\t')[-1] for line in open(labeltxt_dir)]
         self.txt_dict = {}
-        self.txt_dict = self.getDictLabel(dict_txt,labeltxt_dir)
+        self.txt_dict = self.getDictLabel(dict_txt)
         self.mean = np.array(0.588, dtype=np.float32)
         self.std = np.array(0.193, dtype=np.float32)
         self.inp_h = 32
@@ -39,17 +39,11 @@ class baiduData(Dataset):
     def __len__(self):
         return len(self.labels)
 
-    def getDictLabel(self,dict_txt,label_txt):
-        dict_label = {}
+    def getDictLabel(self,dict_txt):
         rec = {}
-        # dict_label["blank"] = 0
-        for line in open(label_txt):
-            line = line.strip().split("\t")[1]
-            for ch in line:
-                dict_label[ch] = 0
-        savefile = open(dict_txt,'w')
-        keys = sorted(list(dict_label.keys()))
-        for index in range(len(keys)):
-            rec[keys[index]] = index + 1
-            savefile.write(keys[index] + "\n")
+        file = open(dict_txt)
+        index = -1
+        for line in file:
+            ch = line.strip()
+            rec[ch] = index + 1
         return rec
